@@ -1,119 +1,199 @@
-#include <mpi.h>
-#include <fmt/core.h>
-#include <vector>
-#include <cmath>
+#include <mpi.h>        // Librería MPI para programación paralela distribuida
+#include <fmt/core.h>   // Librería fmt para impresión formateada
+#include <vector>       // Contenedor dinámico std::vector
+#include <cmath>        // Funciones matemáticas como std::ceil
 
-#define MATRIX_DIM 25
+#define MATRIX_DIM 25   // Tamaño de la matriz cuadrada (25x25)
 
-void imprimir_matriz(const std::vector<double>& A, int rows, int cols) {
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
+// Función para imprimir una matriz almacenada en un vector unidimensional
+void imprimir_matriz(const std::vector<double> &A, int rows, int cols)
+{
+    // Recorre cada fila
+    for (int i = 0; i < rows; ++i)
+    {
+        // Recorre cada columna
+        for (int j = 0; j < cols; ++j)
+        {
+            // Convierte la posición bidimensional (i,j) a índice lineal
             fmt::print("{:.2f} ", A[i * cols + j]);
         }
-        fmt::println();
+
+        // Salto de línea al terminar cada fila
+        fmt::println("");
     }
 }
 
+int main(int argc, char **argv)
+{
+    // Inicializa el entorno MPI
+    MPI_Init(&argc, &argv);
 
-int main(int argc, char** argv) {
-
-    MPI_Init(&argc, &argv); // Inicializa el entorno MPI
-
+    // Número total de procesos MPI
     int nproc;
+
+    // Identificador único del proceso actual
     int rank;
-    //rank y nproc
-    MPI_Comm_size(MPI_COMM_WORLD, &nproc); // Obtiene el número total de procesos
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // Obtiene el ID del proceso
 
-    
-    if(rank == 0) {
+    // Obtiene el número total de procesos ejecutándose
+    MPI_Comm_size(MPI_COMM_WORLD, &nproc);
 
+    // Obtiene el rank (ID) del proceso actual
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    // Calcula cuántas filas le corresponden a cada proceso
+    int rows_per_rank = std::ceil(MATRIX_DIM * 1.0 / nproc);
+
+    // Calcula cuántas filas sobran debido al redondeo
+    int padding = rows_per_rank * nproc - MATRIX_DIM;
+
+    // El proceso 0 actúa como maestro
+    if (rank == 0)
+    {
+        // Matriz completa A de tamaño MATRIX_DIM x MATRIX_DIM
         std::vector<double> A(MATRIX_DIM * MATRIX_DIM);
+
+        // Vector b del sistema Ax=b
         std::vector<double> b(MATRIX_DIM);
+
+        // Vector solución x
         std::vector<double> x(MATRIX_DIM);
 
-        //inicializar la matriz A y el vector b
-        for(int i=0; i<MATRIX_DIM;i++){
-            for(int j=0; j<MATRIX_DIM;j++){
-                int index = i*MATRIX_DIM + j;
-                A[index] = index;
+        // Inicializa la matriz A
+        for (int i = 0; i < MATRIX_DIM; i++)
+        {
+            for (int j = 0; j < MATRIX_DIM; j++)
+            {
+                // Convierte (i,j) a índice lineal
+                int index = i * MATRIX_DIM + j;
+
+                // Llena toda la fila con el valor i
+                A[index] = i;
             }
         }
 
-        for(int i=0; i<MATRIX_DIM;i++){
+        // Inicializa el vector b
+        for (int i = 0; i < MATRIX_DIM; i++)
+        {
             b[i] = i;
         }
 
-        //numero de filas para cada rank(proceso)
-        int rows_per_rank = std::ceil(MATRIX_DIM *1.0 / nproc); // Número de filas que cada proceso manejará
-        int padding = rows_per_rank * nproc - MATRIX_DIM; // Padding necesario para que el número total de filas sea divisible por nproc
+        // Muestra información general de la distribución
+        fmt::println(
+            "MATRIX_DIM: {}, nprocs: {}, rows_per_rank: {}, padding: {}\n",
+            MATRIX_DIM,
+            nproc,
+            rows_per_rank,
+            padding);
 
-        fmt::println("MATRIX_DIM: {}, nprocs: {}, rows_per_rank: {}, padding: {}\n",
-        MATRIX_DIM, nproc, rows_per_rank, padding);
-    };
+        // Envía datos a todos los procesos trabajadores
+        for (int i = 1; i < nproc; i++)
+        {
+            // Cantidad de filas que recibirá inicialmente el proceso i
+            int filas = rows_per_rank;
 
-    for(int i=1; i<nprocs;i++){
-        int filas = rows_per_rank;
-        if(i==nprocs-1){
-            filas = rows_per_rank - padding; // El último proceso maneja las filas restantes sin el padding
+            // Si es el último proceso, se descuentan las filas de padding
+            if (i == nproc - 1)
+            {
+                filas = rows_per_rank - padding;
+            }
+
+            // Vector con metadatos:
+            // [0] = tamaño de la matriz
+            // [1] = número de filas asignadas
+            std::vector<int> data = {MATRIX_DIM, filas};
+
+            // Envía los metadatos al proceso i
+            MPI_Send(
+                data.data(),      // Buffer de envío
+                2,                // Cantidad de enteros
+                MPI_INT,          // Tipo de dato
+                i,                // Destino
+                0,                // Tag
+                MPI_COMM_WORLD    // Comunicador
+            );
+
+            // Puntero al inicio de la matriz A (Apunta al inicio de los datos de la matriz)
+            const double *buffer = A.data();
+
+            // Envía el bloque de filas correspondiente al proceso i
+            MPI_Send(
+                &buffer[i * rows_per_rank * MATRIX_DIM], // Inicio del bloque
+                filas * MATRIX_DIM,                      // Cantidad de elementos
+                MPI_DOUBLE,                              // Tipo de dato
+                i,                                       // Destino
+                0,                                       // Tag
+                MPI_COMM_WORLD                          // Comunicador
+            );
         }
-        std::vector<int> data = {MATRIX_DIM, filas};
-        MPI_Send(
-            data.data(), // Puntero al inicio del vector de datos //buffer
-            2, // Número de elementos a enviar //count
-            MPI_INT, // Tipo de dato de los elementos a enviar //tipo de datos
-            i, // Destino: el proceso con rank i //rank de destino
-            0, // Etiqueta del mensaje (puede ser cualquier entero) //tag
-            MPI_COMM_WORLD  // Enviar datos a cada proceso //grupo
-        );
-        
-        const double* buffer = A.data();
 
-        MPI_Send(
-            &buffer[i * rows_per_rank * MATRIX_DIM], // Puntero al inicio del vector de datos //buffer
-            filas* MATRIX_DIM, // Número de elementos a enviar //count
-            MPI_DOUBLE, // Tipo de dato de los elementos a enviar //tipo de datos
-            i, // Destino: el proceso con rank i //rank de destino
-            0, // Etiqueta del mensaje (puede ser cualquier entero) //tag
-            MPI_COMM_WORLD  // Enviar datos a cada proceso //grupo
-        );
+        // Muestra la porción que teóricamente maneja el rank 0
+        fmt::println(
+            "RANK_{}, {} x {}\n",
+            rank,
+            rows_per_rank,
+            MATRIX_DIM);
     }
-    fmt::println("RANK_{}, {} x {}\n", rank, rows_per_rank, MATRIX_DIM);
-}
-else{
-    std::vector<int> data_rec(2);
+    else
+    {
+        // Vector para recibir los metadatos enviados por el rank 0
+        std::vector<int> data_rec(2);
 
-    MPI_Recv(
-        data_rec.data(), // Puntero al inicio del vector de datos //buffer
-        2, // Número de elementos a recibir //count
-        MPI_INT, // Tipo de dato de los elementos a recibir //tipo de datos
-        0, // Fuente: el proceso con rank 0 //rank de origen
-        0, // Etiqueta del mensaje (debe coincidir con la etiqueta usada por el proceso emisor) //tag
-        MPI_COMM_WORLD, // Recibir datos del proceso con rank 0 //grupo
-        MPI_STATUS_IGNORE // Ignorar el estado del mensaje recibido
-    ); 
+        // Recibe MATRIX_DIM y número de filas asignadas
+        MPI_Recv(
+            data_rec.data(),    // Buffer de recepción
+            2,                  // Cantidad de elementos
+            MPI_INT,            // Tipo de dato
+            0,                  // Origen
+            0,                  // Tag
+            MPI_COMM_WORLD,     // Comunicador
+            MPI_STATUS_IGNORE   // Ignorar información de estado
+        );
 
-    int matrix_dim = data_rec[0];
-    int rows = data_rec[1];
+        // Extrae el tamaño de la matriz
+        int matrix_dim = data_rec[0];
 
-    fmt::println("RANK_{}, {} x {}\n", rank, rows_per_rank, MATRIX_DIM);
-    std::vector<double> A_local(rows * matrix_dim);
+        // Extrae el número de filas asignadas
+        int rows = data_rec[1];
 
-    MPI_Recv(
-        A_local.data(), // Puntero al inicio del vector de datos //buffer
-        rows * matrix_dim, // Número de elementos a recibir //count
-        MPI_DOUBLE, // Tipo de dato de los elementos a recibir //tipo de datos
-        0, // Fuente: el proceso con rank 0 //rank de origen
-        0, // Etiqueta del mensaje (debe coincidir con la etiqueta usada por el proceso emisor) //tag
-        MPI_COMM_WORLD, // Recibir datos del proceso con rank 0 //grupo
-        MPI_STATUS_IGNORE // Ignorar el estado del mensaje recibido
-    );
-    if(rank == 1){
-        fmt::println("Matriz local recibida por RANK_{}:\n", rank);
-        imprimir_matriz(A_local, rows, matrix_dim);
+        // Muestra información del bloque asignado
+        fmt::println(
+            "RANK_{}, {} x {}\n",
+            rank,
+            rows_per_rank,
+            MATRIX_DIM);
+
+        // Reserva espacio para almacenar la submatriz recibida
+        std::vector<double> A_local(rows * matrix_dim);
+
+        // Recibe el bloque de filas correspondiente
+        MPI_Recv(
+            A_local.data(),     // Buffer donde se guardará la submatriz
+            rows * matrix_dim,  // Cantidad de elementos a recibir
+            MPI_DOUBLE,         // Tipo de dato
+            0,                  // Proceso origen
+            0,                  // Tag
+            MPI_COMM_WORLD,     // Comunicador
+            MPI_STATUS_IGNORE   // Ignorar estado
+        );
+
+        // Sólo el proceso 1 imprime su bloque recibido
+        if (rank == 1)
+        {
+            fmt::println(
+                "Matriz local recibida por RANK_{}:\n",
+                rank);
+
+            // Imprime la submatriz recibida
+            imprimir_matriz(
+                A_local,
+                rows,
+                matrix_dim);
+        }
     }
-}
 
-    MPI_Finalize(); // Finaliza el entorno MPI
+    // Finaliza el entorno MPI y libera recursos
+    MPI_Finalize();
+
+    // Fin correcto del programa
     return 0;
-}   
+}
