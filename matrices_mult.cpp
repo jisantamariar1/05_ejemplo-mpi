@@ -163,10 +163,10 @@ int main(int argc, char **argv)
             rows_per_rank,
             MATRIX_DIM);
         // El proceso 0 también procesa su bloque de filas
-        std::vector<double> x_local(rows_per_rank);
+        //std::vector<double> x_local(rows_per_rank);
         fmt::println("Rank_{} resultado local:\n", rank);
         multiplicar_matriz_vector(A, b, x, rows_per_rank, MATRIX_DIM);
-
+    
         imprimir_vector(x);
         //recibe resultados locales de los procesos trabajadores y los combina en el vector solución x
         for (int i=1;i<nproc;i++){
@@ -193,6 +193,7 @@ int main(int argc, char **argv)
             );
 
         }
+            fmt::println("");
             fmt::println("Imprime resultado final en RANK_{}:\n", rank);
             imprimir_vector(x);
 
