@@ -65,18 +65,20 @@ int main(int argc, char **argv)
 
     // Calcula cuántas filas sobran debido al redondeo
     int padding = rows_per_rank * nproc - MATRIX_DIM;
+    //calcula el numero de filas totales con padding
+    int padded_rows = rows_per_rank * nproc;
 
     // El proceso 0 actúa como maestro
     if (rank == 0)
     {
-        // Matriz completa A de tamaño MATRIX_DIM x MATRIX_DIM
-        std::vector<double> A(MATRIX_DIM * MATRIX_DIM);
+        // Matriz A con tamaño ajustado al PADDING, inicializada en 0.0
+        std::vector<double> A(padded_rows * MATRIX_DIM, 0.0);
 
-        // Vector b del sistema Ax=b
+        //b no necesita padding, porque el padding se está agregando en las filas de la matriz, no en las columnas.
         std::vector<double> b(MATRIX_DIM);
 
-        // Vector solución x
-        std::vector<double> x(MATRIX_DIM);
+        // Vector solución x con tamaño ajustado al PADDING, inicializado en 0.0
+        std::vector<double> x(padded_rows, 0.0);
 
         // Inicializa la matriz A
         for (int i = 0; i < MATRIX_DIM; i++)
@@ -109,18 +111,18 @@ int main(int argc, char **argv)
         for (int i = 1; i < nproc; i++)
         {
             // Cantidad de filas que recibirá inicialmente el proceso i
-            int filas = rows_per_rank;
+            //int filas = rows_per_rank;
 
             // Si es el último proceso, se descuentan las filas de padding
-            if (i == nproc - 1)
+/*             if (i == nproc - 1)
             {
                 filas = rows_per_rank - padding;
-            }
+            } */
 
             // Vector con metadatos:
             // [0] = tamaño de la matriz
             // [1] = número de filas asignadas
-            std::vector<int> data = {MATRIX_DIM, filas};
+            std::vector<int> data = {MATRIX_DIM, rows_per_rank};
 
             // Envía los metadatos al proceso i
             MPI_Send(
@@ -138,7 +140,7 @@ int main(int argc, char **argv)
             // Envía el bloque de filas correspondiente al proceso i
             MPI_Send(
                 &buffer[i * rows_per_rank * MATRIX_DIM], // Inicio del bloque
-                filas * MATRIX_DIM,                      // Cantidad de elementos
+                rows_per_rank * MATRIX_DIM,                      // Cantidad de elementos
                 MPI_DOUBLE,                              // Tipo de dato
                 i,                                       // Destino
                 0,                                       // Tag
@@ -170,21 +172,17 @@ int main(int argc, char **argv)
         imprimir_vector(x);
         //recibe resultados locales de los procesos trabajadores y los combina en el vector solución x
         for (int i=1;i<nproc;i++){
-            int filas = rows_per_rank;
-            if (i == nproc - 1)
-            {
-                filas = rows_per_rank - padding;
-            }
+
             /*
             [0,1,2,3,4,5,6,7,8,9,10,11,12...............,24]
             R0[x x x x x x x, ........................]
             R1[.............., y y y y y y y y y y y y................]
             R2[.............., ....................., z z z z z z z z z z z z]
-            R3[.............., ....................., ....................., w w w w ] aqui van solo 4
+            R3[.............., ....................., ....................., w w w w ] aqui van solo 4(ahora son iguales de tamaño)(se elimino el if)
             */
             MPI_Recv(
                 x.data() + i * rows_per_rank, // Buffer de recepción (coloca el resultado en la posición correcta de x)
-                filas,                 // Cantidad de elementos a recibir
+                rows_per_rank,                 // Cantidad de elementos a recibir
                 MPI_DOUBLE,           // Tipo de dato
                 i,                    // Origen
                 0,                    // Tag
@@ -267,8 +265,8 @@ int main(int argc, char **argv)
         
 
 
-        // Sólo el proceso 2 imprime su bloque recibido
-        if (rank == 2)
+        // Sólo el untimo imprime su bloque recibido
+        if (rank == nproc-1)
         {
             fmt::println(
                 "Matriz local recibida por RANK_{}:\n",
