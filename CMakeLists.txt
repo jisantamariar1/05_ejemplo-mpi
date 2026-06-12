@@ -12,6 +12,7 @@ include_directories(${MPI_INCLUDE})
 # 3. Definir los ejecutables
 add_executable(ejemplo-mpi main.cpp)
 add_executable(matrices_mult matrices_mult.cpp)
+add_executable(matrices_mult_colectiva matrices_mult_colectiva.cpp)
 
 
 # 4. Buscar librerías externas
@@ -21,3 +22,4 @@ find_package(fmt CONFIG REQUIRED)
 #impi.lib intel mpi (arhivo con todo el codigo binario de la implementacion MPI de intel)
 target_link_libraries(ejemplo-mpi PRIVATE fmt::fmt ${MPI_LIB}/impi.lib) 
 target_link_libraries(matrices_mult PRIVATE fmt::fmt ${MPI_LIB}/impi.lib) 
+target_link_libraries(matrices_mult_colectiva PRIVATE fmt::fmt ${MPI_LIB}/impi.lib) 
